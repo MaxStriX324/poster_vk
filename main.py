@@ -31,7 +31,7 @@ def get_settings(param):    #функция чтения параметров и
     elif param == 'path_to_photo':
         return(config["VK"]["path_to_photo"])
     elif param == 'time':
-        return(config["VK"]["time__beth_post"])
+        return(config["VK"]["time_beth_post"])
     
 
 #подключение к базе данных
@@ -62,7 +62,6 @@ def get_old_id_in_db():
 def search_datetime_to_bd():
     sqlite_connection, cursor = connect_to_bd()
     r_unixdate = int(time.time())
-    print(r_unixdate)
     cursor.execute('SELECT * FROM posts WHERE PUBLISH_DATE > ?', (r_unixdate, ))
     result = cursor.fetchall()
     disconect_to_bd(sqlite_connection, cursor)
@@ -77,8 +76,8 @@ def upload_photo_to_album(id_db, cursor, vk_sess):
     print(path[0][0])
     photo = upload.photo(  
         path[0][0],
-        album_id=get_settings(album_id),
-        group_id=get_settings(group_id)
+        album_id=get_settings('album_id'),
+        group_id=get_settings('group_id')
     )
 
     vk_photo_url = 'photo{}_{}'.format(
@@ -115,10 +114,11 @@ def add_post_to_bd(id_db, text, from_id, path, vk_sess):
     sqlite_connection.commit()
     disconect_to_bd(sqlite_connection, cursor)
 
-def create_post_vk(vk, id_db):
+def create_post_vk(vk_session, id_db):
     sqlite_connection, cursor = connect_to_bd()
     cursor.execute('SELECT * FROM posts WHERE ID = ?', (id_db, ))
     data = cursor.fetchall()
+    vk = vk_session.get_api()
     result = vk.wall.post(owner_id=-199728158, message=data[0][1], from_group=1, attachments=data[0][8], publish_date=data[0][4])
     cursor.execute("update posts SET POST_ID = (?) WHERE ID = (?)", (result['post_id'], id_db, ))
     sqlite_connection.commit()
@@ -182,9 +182,10 @@ def main():
                             add_post_to_bd(id_photo, text, from_id, path_to_photo, vk_sess)
                 else:
                     add_post_to_bd(id_photo, text, from_id, 0, vk_sess)
-                create_post_vk(vk, id_photo)
+                create_post_vk(vk_sess, id_photo)
                 send_message_to_user(vk, id_photo)            
-                            
+            print()
+            print()
                             
                 
 
