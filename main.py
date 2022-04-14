@@ -30,6 +30,8 @@ def get_settings(param):    #функция чтения параметров и
         return(int(config["VK"]["user_id2"]))
     elif param == 'path_to_photo':
         return(config["VK"]["path_to_photo"])
+    elif param == 'time':
+        return(config["VK"]["time__beth_post"])
     
 
 #подключение к базе данных
@@ -49,11 +51,6 @@ def disconect_to_bd(sqlite_connection, cursor):
         sqlite_connection.close()
         print("Соединение с SQLite закрыто")
 
-"""def message_to_bd(message, id_user):
-    sqlite_connection, cursor = connect_to_bd()
-    cur.execute("insert into posts values (?, ?)", ("C", 1972))
-    disconect_to_bd(sqlite_connection, cursor)"""
-
 def get_old_id_in_db():
     sqlite_connection, cursor = connect_to_bd()
     cursor.execute("SELECT ID FROM posts")
@@ -71,7 +68,82 @@ def search_datetime_to_bd():
     disconect_to_bd(sqlite_connection, cursor)
     return(len(result))
 
-def upload_photo_to_album(id_db, cursor):
+def upload_photo_to_album(id_db, cursor, vk_sess):
+
+    upload = vk_api.VkUpload(vk_sess)
+    
+    cursor.execute('SELECT ATTACHMENTS FROM posts WHERE ID = ?', (id_db, ))
+    path = cursor.fetchall()
+    print(path[0][0])
+    photo = upload.photo(  
+        path[0][0],
+        album_id=get_settings(album_id),
+        group_id=get_settings(group_id)
+    )
+
+    vk_photo_url = 'photo{}_{}'.format(
+        photo[0]['owner_id'], photo[0]['id']
+    )
+
+    print('Фото успешно загружено в альбом')
+    cursor.execute("update posts SET PHOTO_URL = (?) WHERE ID = (?)", (vk_photo_url, id_db, ))
+    
+
+def add_post_to_bd(id_db, text, from_id, path, vk_sess):
+    sqlite_connection, cursor = connect_to_bd()
+    cursor.execute("INSERT OR IGNORE into posts values (?, ?, ?, ?, ?, ?, ?, ?, ?)", (id_db, text, 1, 'NULL', 0, 0, 0, from_id, 0, ))
+    if path != 0:
+        cursor.execute("update posts SET ATTACHMENTS = (?) WHERE ID = (?)", (path, id_db, ))
+        upload_photo_to_album(id_db, cursor, vk_sess)
+        print('Сообщение удачно записано с фото')
+    else:
+        cursor.execute("update posts SET FROM_ID = (?) WHERE ID = (?)", (from_id, id_db, ))
+        print('Сообщение удачно записано без фото')
+        
+    r_unixdate = int(time.time())
+    if search_datetime_to_bd() == 0:
+        date = r_unixdate + int(get_settings('time'))
+        cursor.execute("update posts SET PUBLISH_DATE = (?) WHERE ID = (?)", (date, id_db, ))
+    else:
+        last_post = id_db - 1
+        cursor.execute('SELECT * FROM posts WHERE ID = ?', (last_post, ))
+        data = cursor.fetchall()
+        date = int(data[0][4]) + int(get_settings('time'))
+        cursor.execute("update posts SET PUBLISH_DATE = (?) WHERE ID = (?)", (date, id_db, ))
+
+        
+    sqlite_connection.commit()
+    disconect_to_bd(sqlite_connection, cursor)
+
+def create_post_vk(vk, id_db):
+    sqlite_connection, cursor = connect_to_bd()
+    cursor.execute('SELECT * FROM posts WHERE ID = ?', (id_db, ))
+    data = cursor.fetchall()
+    result = vk.wall.post(owner_id=-199728158, message=data[0][1], from_group=1, attachments=data[0][8], publish_date=data[0][4])
+    cursor.execute("update posts SET POST_ID = (?) WHERE ID = (?)", (result['post_id'], id_db, ))
+    sqlite_connection.commit()
+    print('Пост успешно добавлен в отложенные')
+    disconect_to_bd(sqlite_connection, cursor)
+    
+def send_message_to_user(vk, id_db):
+    print("Отправляю сообщение пользователю")
+    sqlite_connection, cursor = connect_to_bd()
+    cursor.execute('SELECT * FROM posts WHERE ID = ?', (id_db, ))
+    data = cursor.fetchall()
+    date = time.ctime(int(data[0][4]))
+    message_vk = "Пост успешно добавлен в очередь\nТекст поста: " + data[0][1] + "\nСсылка на фото: " + data[0][8] + "\nБудет опубликован: " + date
+    try:
+        vk.messages.send(
+        peer_id=get_settings('chat_id'),
+        random_id=get_random_id(),
+        message=message_vk)
+    except:
+        print("Ошибка отправки сообщения у id" + str(from_id))    
+    disconect_to_bd(sqlite_connection, cursor)
+
+
+def main():
+    
     vk_sess = vk_api.VkApi(get_settings('login'), get_settings('password'))
 
     try:
@@ -79,47 +151,7 @@ def upload_photo_to_album(id_db, cursor):
     except vk_api.AuthError as error_msg:
         print(error_msg)
         return
-
-    upload = vk_api.VkUpload(vk_sess)
     
-    cursor.execute('SELECT ATTACHMENTS FROM posts WHERE ID = ?', (id_db, ))
-    path = cursor.fetchall()
-    print(path[0][0])
-    photo = upload.photo(  # Подставьте свои данные
-        path[0][0],
-        album_id=275430694,
-        group_id=199728158
-    )
-
-    vk_photo_url = 'photo{}_{}'.format(
-        photo[0]['owner_id'], photo[0]['id']
-    )
-
-    #print(photo, '\nLink: ', vk_photo_url)
-    print('Фото успешно загружено в альбом')
-    cursor.execute("update posts SET PHOTO_URL = (?) WHERE ID = (?)", (vk_photo_url, id_db, ))
-    
-
-def add_post_to_bd(id_db, text, from_id, path):
-    sqlite_connection, cursor = connect_to_bd()
-    cursor.execute("INSERT OR IGNORE into posts values (?, ?, ?, ?, ?, ?, ?, ?, ?)", (id_db, text, 1, 'NULL', 0, 0, 0, from_id, 0, ))
-    if path != 0:
-        cursor.execute("update posts SET ATTACHMENTS = (?) WHERE ID = (?)", (path, id_db, ))
-        upload_photo_to_album(id_db, cursor)
-        print('Сообщение удачно записано с фото')
-    else:
-        cursor.execute("update posts SET FROM_ID = (?) WHERE ID = (?)", (from_id, id_db, ))
-        print('Сообщение удачно записано без фото')
- #   if search_datetime_to_bd() != 0:
- #       r_unixdate = int(time.time())
- #       if id_db - 1
-        
-    sqlite_connection.commit()
-    disconect_to_bd(sqlite_connection, cursor)    
-
-    
-
-def main(): 
     vk_session = vk_api.VkApi(token=get_settings('token'))
     vk = vk_session.get_api()
     longpoll = VkBotLongPoll(vk_session, get_settings('group_id'))
@@ -147,20 +179,15 @@ def main():
                             out.close
                             print('Фото удачно скачано')
                             
-                            add_post_to_bd(id_photo, text, from_id, path_to_photo)
+                            add_post_to_bd(id_photo, text, from_id, path_to_photo, vk_sess)
                 else:
-                    add_post_to_bd(id_photo, text, from_id, 0)
-                            
+                    add_post_to_bd(id_photo, text, from_id, 0, vk_sess)
+                create_post_vk(vk, id_photo)
+                send_message_to_user(vk, id_photo)            
                             
                             
                 
-                try:
-                    vk.messages.send(
-                    peer_id=get_settings('chat_id'),
-                    random_id=get_random_id(),
-                    message=text)
-                except:
-                    print("Ошибка отправки сообщения у id" + str(from_id))
+
  
 
         else:
