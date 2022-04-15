@@ -32,12 +32,14 @@ def get_settings(param):    #функция чтения параметров и
         return(config["VK"]["path_to_photo"])
     elif param == 'time':
         return(config["VK"]["time_beth_post"])
+    elif param == 'path_to_bd':
+        return(config["VK"]["path_to_bd"])    
     
 
 #подключение к базе данных
 def connect_to_bd():
     try:
-        sqlite_connection = sqlite3.connect('dbposter.db')
+        sqlite_connection = sqlite3.connect(get_settings('path_to_bd'))
         cursor = sqlite_connection.cursor()
         print("База данных успешно подключена к SQLite")
         
@@ -73,7 +75,6 @@ def upload_photo_to_album(id_db, cursor, vk_sess):
     
     cursor.execute('SELECT ATTACHMENTS FROM posts WHERE ID = ?', (id_db, ))
     path = cursor.fetchall()
-    print(path[0][0])
     photo = upload.photo(  
         path[0][0],
         album_id=get_settings('album_id'),
@@ -110,7 +111,6 @@ def add_post_to_bd(id_db, text, from_id, path, vk_sess):
         date = int(data[0][4]) + int(get_settings('time'))
         cursor.execute("update posts SET PUBLISH_DATE = (?) WHERE ID = (?)", (date, id_db, ))
 
-        
     sqlite_connection.commit()
     disconect_to_bd(sqlite_connection, cursor)
 
@@ -119,7 +119,8 @@ def create_post_vk(vk_session, id_db):
     cursor.execute('SELECT * FROM posts WHERE ID = ?', (id_db, ))
     data = cursor.fetchall()
     vk = vk_session.get_api()
-    result = vk.wall.post(owner_id=-199728158, message=data[0][1], from_group=1, attachments=data[0][8], publish_date=data[0][4])
+    owner_id_str = '-' + str(get_settings('group_id'))
+    result = vk.wall.post(owner_id=owner_id_str, message=data[0][1], from_group=1, attachments=data[0][8], publish_date=data[0][4])
     cursor.execute("update posts SET POST_ID = (?) WHERE ID = (?)", (result['post_id'], id_db, ))
     sqlite_connection.commit()
     print('Пост успешно добавлен в отложенные')
@@ -141,9 +142,7 @@ def send_message_to_user(vk, id_db):
         print("Ошибка отправки сообщения у id" + str(from_id))    
     disconect_to_bd(sqlite_connection, cursor)
 
-
-def main():
-    
+def connect_to_vk():
     vk_sess = vk_api.VkApi(get_settings('login'), get_settings('password'))
 
     try:
@@ -155,46 +154,54 @@ def main():
     vk_session = vk_api.VkApi(token=get_settings('token'))
     vk = vk_session.get_api()
     longpoll = VkBotLongPoll(vk_session, get_settings('group_id'))
+    return(vk_sess, vk_session, vk, longpoll)
 
-    for event in longpoll.listen():     #цикл проверки событий
 
-        if event.type == VkBotEventType.MESSAGE_NEW:        #если событие это новое сообщение
-            print('пришло новое сообщение')
-            text = event.obj.message['text']
-            from_id = event.obj.message['from_id']
-            if from_id == get_settings('user_id1') or from_id == get_settings('user_id2'):      #если сообщение пришло от нужных людей
-                atchs = event.object.message['attachments']
-                id_photo = int(get_old_id_in_db()) + 1
-                print("Будет записано с id: " + str(id_photo))
-                if atchs:                                                                       #если в сообщении есть фото
-                    for atch in atchs:
-                        if atch['type'] == 'photo':
-                            photo = atch['photo']
+def main():
+    vk_sess, vk_session, vk, longpoll = connect_to_vk()
 
-                            url = photo['sizes'][-1]['url']
-                            img = urllib.request.urlopen(url).read()
-                            path_to_photo = get_settings('path_to_photo') + str(id_photo) + ".jpg"
-                            out = open(path_to_photo, "wb")
-                            out.write(img)
-                            out.close
-                            print('Фото удачно скачано')
-                            
-                            add_post_to_bd(id_photo, text, from_id, path_to_photo, vk_sess)
-                else:
-                    add_post_to_bd(id_photo, text, from_id, 0, vk_sess)
-                create_post_vk(vk_sess, id_photo)
-                send_message_to_user(vk, id_photo)            
-            print()
-            print()
-                            
-                
+    try:
+        for event in longpoll.listen():     #цикл проверки событий
 
- 
+            if event.type == VkBotEventType.MESSAGE_NEW:        #если событие это новое сообщение
+                print('пришло новое сообщение')
+                text = event.obj.message['text']
+                from_id = event.obj.message['from_id']
+                if from_id == get_settings('user_id1') or from_id == get_settings('user_id2'):      #если сообщение пришло от нужных людей
+                    atchs = event.object.message['attachments']
+                    id_photo = int(get_old_id_in_db()) + 1
+                    print("Будет записано с id: " + str(id_photo))
+                    if atchs:                                                                       #если в сообщении есть фото
+                        for atch in atchs:
+                            if atch['type'] == 'photo':
+                                photo = atch['photo']
 
-        else:
-            print(event.type)
-            print()
+                                url = photo['sizes'][-1]['url']
+                                img = urllib.request.urlopen(url).read()
+                                path_to_photo = get_settings('path_to_photo') + str(id_photo) + ".jpg"
+                                out = open(path_to_photo, "wb")
+                                out.write(img)
+                                out.close
+                                print('Фото удачно скачано')
+                                
+                                add_post_to_bd(id_photo, text, from_id, path_to_photo, vk_sess)
+                    else:
+                        add_post_to_bd(id_photo, text, from_id, 0, vk_sess)
+                    create_post_vk(vk_sess, id_photo)
+                    send_message_to_user(vk, id_photo)            
+                print()
+                print()
+                                
+                    
 
+     
+
+            else:
+                print(event.type)
+                print()
+    except requests.exceptions.ReadTimeout:
+        print("\n Переподключение к серверам ВК \n")
+        time.sleep(3)
 
 if __name__ == '__main__':
     main()
