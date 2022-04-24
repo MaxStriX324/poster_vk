@@ -126,21 +126,44 @@ def create_post_vk(vk_session, id_db):
     print('Пост успешно добавлен в отложенные')
     disconect_to_bd(sqlite_connection, cursor)
     
-def send_message_to_user(vk, id_db):
-    print("Отправляю сообщение пользователю")
-    sqlite_connection, cursor = connect_to_bd()
-    cursor.execute('SELECT * FROM posts WHERE ID = ?', (id_db, ))
-    data = cursor.fetchall()
-    date = time.ctime(int(data[0][4]))
-    message_vk = "Пост успешно добавлен в очередь\nТекст поста: " + data[0][1] + "\nСсылка на фото: " + data[0][8] + "\nБудет опубликован: " + date
-    try:
-        vk.messages.send(
-        peer_id=get_settings('chat_id'),
-        random_id=get_random_id(),
-        message=message_vk)
-    except:
-        print("Ошибка отправки сообщения у id" + str(from_id))    
-    disconect_to_bd(sqlite_connection, cursor)
+def send_message_to_user(vk, id_db, type_event, id_user):
+    if type_event == 0:
+        print("Отправляю сообщение пользователю")
+        sqlite_connection, cursor = connect_to_bd()
+        cursor.execute('SELECT * FROM posts WHERE ID = ?', (id_db, ))
+        data = cursor.fetchall()
+        date = time.ctime(int(data[0][4]))
+        message_vk = "Пост успешно добавлен в очередь\nТекст поста: " + data[0][1] + "\nСсылка на фото: " + data[0][8] + "\nБудет опубликован: " + date + "\Количество отложенных записей(Если больше 150, лучше не писать): " + str(search_datetime_to_bd())
+        try:
+            vk.messages.send(
+            peer_id=get_settings('chat_id'),
+            random_id=get_random_id(),
+            message=message_vk)
+        except:
+            print("Ошибка отправки сообщения у id" + str(data[0][7]))    
+        disconect_to_bd(sqlite_connection, cursor)
+
+    elif type_event == 1:
+        print("Отправляю сообщение пользователю")
+        message_vk = "Пользователь подписался на сообщество: \nvk.com/id" + str(id_user)
+        try:
+            vk.messages.send(
+            peer_id=get_settings('chat_id'),
+            random_id=get_random_id(),
+            message=message_vk)
+        except:
+            print("Ошибка отправки сообщения")
+
+    elif type_event == 2:
+        print("Отправляю сообщение пользователю")
+        message_vk = "Пользователь отписался от сообщества: \nvk.com/id" + str(id_user)
+        try:
+            vk.messages.send(
+            peer_id=get_settings('chat_id'),
+            random_id=get_random_id(),
+            message=message_vk)
+        except:
+            print("Ошибка отправки сообщения")     
 
 def connect_to_vk():
     vk_sess = vk_api.VkApi(get_settings('login'), get_settings('password'))
@@ -156,15 +179,16 @@ def connect_to_vk():
     longpoll = VkBotLongPoll(vk_session, get_settings('group_id'))
     return(vk_sess, vk_session, vk, longpoll)
 
-
-def main():
+def bot_msg():
     vk_sess, vk_session, vk, longpoll = connect_to_vk()
 
     try:
         for event in longpoll.listen():     #цикл проверки событий
+            print('Новое событие')
 
             if event.type == VkBotEventType.MESSAGE_NEW:        #если событие это новое сообщение
                 print('пришло новое сообщение')
+                print(event.obj)
                 text = event.obj.message['text']
                 from_id = event.obj.message['from_id']
                 if from_id == get_settings('user_id1') or from_id == get_settings('user_id2'):      #если сообщение пришло от нужных людей
@@ -188,20 +212,35 @@ def main():
                     else:
                         add_post_to_bd(id_photo, text, from_id, 0, vk_sess)
                     create_post_vk(vk_sess, id_photo)
-                    send_message_to_user(vk, id_photo)            
+                    send_message_to_user(vk, id_photo, 0, 0)            
                 print()
                 print()
                                 
-                    
-
-     
+            elif event.type == VkBotEventType.GROUP_JOIN:
+                print('Человек вошел в группу')
+                print(event.obj['user_id'])
+                send_message_to_user(vk, 0, 1, event.obj['user_id'])
+                print()
+                print()                
+                
+            elif event.type == VkBotEventType.GROUP_LEAVE:
+                print('Человек вышел из группы')
+                print(event.obj['user_id'])                
+                send_message_to_user(vk, 0, 2, event.obj['user_id'])
+                print()
+                print()                
 
             else:
                 print(event.type)
                 print()
     except requests.exceptions.ReadTimeout:
         print("\n Переподключение к серверам ВК \n")
-        time.sleep(3)
+        time.sleep(60)
+
+def main():
+    print('Программа запущена')
+    while True:
+        bot_msg()
 
 if __name__ == '__main__':
     main()
