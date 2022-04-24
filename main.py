@@ -114,26 +114,14 @@ def add_post_to_bd(id_db, text, from_id, path, vk_sess):
     sqlite_connection.commit()
     disconect_to_bd(sqlite_connection, cursor)
 
-def create_post_vk(vk_session, id_db):
-    sqlite_connection, cursor = connect_to_bd()
-    cursor.execute('SELECT * FROM posts WHERE ID = ?', (id_db, ))
-    data = cursor.fetchall()
-    vk = vk_session.get_api()
-    owner_id_str = '-' + str(get_settings('group_id'))
-    result = vk.wall.post(owner_id=owner_id_str, message=data[0][1], from_group=1, attachments=data[0][8], publish_date=data[0][4])
-    cursor.execute("update posts SET POST_ID = (?) WHERE ID = (?)", (result['post_id'], id_db, ))
-    sqlite_connection.commit()
-    print('Пост успешно добавлен в отложенные')
-    disconect_to_bd(sqlite_connection, cursor)
-    
-def send_message_to_user(vk, id_db, type_event, id_user):
+def send_message_to_user(vk, id_db, type_event, id_user, text, post_id):
     if type_event == 0:
         print("Отправляю сообщение пользователю")
         sqlite_connection, cursor = connect_to_bd()
         cursor.execute('SELECT * FROM posts WHERE ID = ?', (id_db, ))
         data = cursor.fetchall()
         date = time.ctime(int(data[0][4]))
-        message_vk = "Пост успешно добавлен в очередь\nТекст поста: " + data[0][1] + "\nСсылка на фото: " + data[0][8] + "\nБудет опубликован: " + date + "\Количество отложенных записей(Если больше 150, лучше не писать): " + str(search_datetime_to_bd())
+        message_vk = "Пост успешно добавлен в очередь\nТекст поста: " + str(data[0][1]) + "\nСсылка на фото: " + str(data[0][8]) + "\nБудет опубликован: " + str(date) + "\nКоличество отложенных записей(Если больше 150, лучше не писать): " + str(search_datetime_to_bd())
         try:
             vk.messages.send(
             peer_id=get_settings('chat_id'),
@@ -163,7 +151,59 @@ def send_message_to_user(vk, id_db, type_event, id_user):
             random_id=get_random_id(),
             message=message_vk)
         except:
-            print("Ошибка отправки сообщения")     
+            print("Ошибка отправки сообщения")
+            
+    elif type_event == 3:
+        print("Отправляю сообщение пользователю")
+        message_vk = "Пользователь написал коментарий: vk.com/id" + str(id_user) + "\nТекст: " + text + '\nСсылка на пост: vk.com/knkd324?w=wall-' + str(get_settings('group_id')) + '_' + str(post_id)
+        try:
+            vk.messages.send(
+            peer_id=get_settings('chat_id'),
+            random_id=get_random_id(),
+            message=message_vk)
+        except:
+            print("Ошибка отправки сообщения")
+
+    elif type_event == 4:
+        print("Отправляю сообщение пользователю")
+        message_vk = "Количество отложенных записей: " + str(search_datetime_to_bd())
+        try:
+            vk.messages.send(
+            peer_id=get_settings('chat_id'),
+            random_id=get_random_id(),
+            message=message_vk)
+        except:
+            print("Ошибка отправки сообщения")
+            
+    elif type_event == 5:
+        print("Отправляю сообщение пользователю")
+        message_vk = "Количество отложенных записей: " + str(search_datetime_to_bd()) + '\nСообщение не добавлено в очередб постов((('
+        try:
+            vk.messages.send(
+            peer_id=get_settings('chat_id'),
+            random_id=get_random_id(),
+            message=message_vk)
+        except vk_api.exceptions.ApiError as error:
+            print("Ошибка отправки сообщения")
+            print(error)
+
+def create_post_vk(vk_session, id_db, vk1):
+    try:
+        sqlite_connection, cursor = connect_to_bd()
+        cursor.execute('SELECT * FROM posts WHERE ID = ?', (id_db, ))
+        data = cursor.fetchall()
+        vk = vk_session.get_api()
+        owner_id_str = '-' + str(get_settings('group_id'))
+        result = vk.wall.post(owner_id=owner_id_str, message=data[0][1], from_group=1, attachments=data[0][8], publish_date=data[0][4])
+        cursor.execute("update posts SET POST_ID = (?) WHERE ID = (?)", (result['post_id'], id_db, ))
+        sqlite_connection.commit()
+        print('Пост успешно добавлен в отложенные')
+        disconect_to_bd(sqlite_connection, cursor)
+    except vk_api.exceptions.ApiError as error_msg:
+        print(error_msg)
+        print()
+        print()
+        send_message_to_user(vk1, 0, 5, 0, 0, 0)  
 
 def connect_to_vk():
     vk_sess = vk_api.VkApi(get_settings('login'), get_settings('password'))
@@ -188,48 +228,68 @@ def bot_msg():
 
             if event.type == VkBotEventType.MESSAGE_NEW:        #если событие это новое сообщение
                 print('пришло новое сообщение')
-                print(event.obj)
+                
+                #Для отладки(ID беседы) искать в конце peer_id
+                #print(event.obj)
+                
                 text = event.obj.message['text']
-                from_id = event.obj.message['from_id']
-                if from_id == get_settings('user_id1') or from_id == get_settings('user_id2'):      #если сообщение пришло от нужных людей
-                    atchs = event.object.message['attachments']
-                    id_photo = int(get_old_id_in_db()) + 1
-                    print("Будет записано с id: " + str(id_photo))
-                    if atchs:                                                                       #если в сообщении есть фото
-                        for atch in atchs:
-                            if atch['type'] == 'photo':
-                                photo = atch['photo']
+                print(text)
+                if text == 'тест' or text == 'Тест':
+                    print('Пользователь попросил узнать кол-во отложенных записей')
+                    send_message_to_user(vk, 0, 4, 0, 0, 0) 
+                else:
+                    from_id = event.obj.message['from_id']
+                    if from_id == get_settings('user_id1') or from_id == get_settings('user_id2'):      #если сообщение пришло от нужных людей
+                        atchs = event.object.message['attachments']
+                        id_photo = int(get_old_id_in_db()) + 1
+                        print("Будет записано с id: " + str(id_photo))
+                        if atchs:                                                                       #если в сообщении есть фото
+                            for atch in atchs:
+                                if atch['type'] == 'photo':
+                                    photo = atch['photo']
 
-                                url = photo['sizes'][-1]['url']
-                                img = urllib.request.urlopen(url).read()
-                                path_to_photo = get_settings('path_to_photo') + str(id_photo) + ".jpg"
-                                out = open(path_to_photo, "wb")
-                                out.write(img)
-                                out.close
-                                print('Фото удачно скачано')
-                                
-                                add_post_to_bd(id_photo, text, from_id, path_to_photo, vk_sess)
-                    else:
-                        add_post_to_bd(id_photo, text, from_id, 0, vk_sess)
-                    create_post_vk(vk_sess, id_photo)
-                    send_message_to_user(vk, id_photo, 0, 0)            
-                print()
-                print()
+                                    url = photo['sizes'][-1]['url']
+                                    img = urllib.request.urlopen(url).read()
+                                    path_to_photo = get_settings('path_to_photo') + str(id_photo) + ".jpg"
+                                    out = open(path_to_photo, "wb")
+                                    out.write(img)
+                                    out.close
+                                    print('Фото удачно скачано')
+                                    
+                                    add_post_to_bd(id_photo, text, from_id, path_to_photo, vk_sess)
+                        else:
+                            add_post_to_bd(id_photo, text, from_id, 0, vk_sess)
+                        create_post_vk(vk_sess, id_photo, vk)
+                        send_message_to_user(vk, id_photo, 0, 0, 0, 0)            
+                    print()
+                    print()
                                 
             elif event.type == VkBotEventType.GROUP_JOIN:
                 print('Человек вошел в группу')
                 print(event.obj['user_id'])
-                send_message_to_user(vk, 0, 1, event.obj['user_id'])
+                send_message_to_user(vk, 0, 1, event.obj['user_id'], 0, 0)
                 print()
                 print()                
                 
             elif event.type == VkBotEventType.GROUP_LEAVE:
                 print('Человек вышел из группы')
                 print(event.obj['user_id'])                
-                send_message_to_user(vk, 0, 2, event.obj['user_id'])
+                send_message_to_user(vk, 0, 2, event.obj['user_id'], 0, 0)
+                print()
+                print()
+                
+            elif event.type == VkBotEventType.WALL_REPOST:
+                print('Человек сделал репост')
+                print(event.obj)
+                print()
+                print()
+
+            elif event.type == VkBotEventType.WALL_REPLY_NEW:
+                print('Человек написал коментарий')
+                send_message_to_user(vk, 0, 3, event.obj['from_id'], event.obj['text'], event.obj['post_id'])
                 print()
                 print()                
-
+                
             else:
                 print(event.type)
                 print()
