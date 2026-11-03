@@ -1,0 +1,11 @@
+# Local secrets: create from settings.example.ini
+/settings.ini
+# Local operational state
+/*.db
+/*.db-*
+/*.sqlite
+/*.sqlite3
+/photos/
+__pycache__/
+*.py[cod]
+.venv/
