@@ -1,5 +1,6 @@
 # Local secrets: create from settings.example.ini
 /settings.ini
+/settings.ini.*
 # Local operational state
 /*.db
 /*.db-*
